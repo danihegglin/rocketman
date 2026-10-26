@@ -29,6 +29,7 @@ actions!(
         Save,
         NewRequest,
         NewCollection,
+        ImportOpenApi,
         OpenFolder,
         Reload,
         FocusUrl,
@@ -452,14 +453,30 @@ impl RocketApp {
                     .gap_1()
                     .child(div().flex_1().child(Input::new(&self.filter).small().cleanable(true)))
                     .child(
-                        Button::new("new-collection")
+                        Button::new("add-collection")
                             .ghost()
                             .small()
                             .icon(IconName::Plus)
-                            .tooltip("New collection")
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.new_collection(&NewCollection, window, cx)
-                            })),
+                            .tooltip("New or import collection")
+                            .dropdown_menu({
+                                let this = cx.entity().downgrade();
+                                move |menu, _, _| {
+                                    let item = |label: &'static str, f: fn(&mut RocketApp, &mut Window, &mut Context<RocketApp>)| {
+                                        let this = this.clone();
+                                        PopupMenuItem::new(label).on_click(move |_, window, cx| {
+                                            if let Some(this) = this.upgrade() {
+                                                this.update(cx, |this, cx| f(this, window, cx));
+                                            }
+                                        })
+                                    };
+                                    menu.item(item("New Collection…", |this, window, cx| {
+                                        this.new_collection(&NewCollection, window, cx)
+                                    }))
+                                    .item(item("Import OpenAPI File…", |this, window, cx| {
+                                        this.import_openapi(&ImportOpenApi, window, cx)
+                                    }))
+                                }
+                            }),
                     ),
             )
             .child(
@@ -488,12 +505,24 @@ impl RocketApp {
                         .text_color(theme.muted_foreground)
                         .child("No collections yet")
                         .child(
-                            Button::new("create-first")
-                                .small()
-                                .label("New collection")
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.new_collection(&NewCollection, window, cx)
-                                })),
+                            h_flex()
+                                .gap_2()
+                                .child(
+                                    Button::new("create-first")
+                                        .small()
+                                        .label("New collection")
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.new_collection(&NewCollection, window, cx)
+                                        })),
+                                )
+                                .child(
+                                    Button::new("import-first")
+                                        .small()
+                                        .label("Import OpenAPI")
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.import_openapi(&ImportOpenApi, window, cx)
+                                        })),
+                                ),
                         ),
                 )
             })
@@ -961,6 +990,63 @@ impl RocketApp {
             });
         })
         .detach();
+    }
+
+    fn import_openapi(&mut self, _: &ImportOpenApi, window: &mut Window, cx: &mut Context<Self>) {
+        let paths = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: true,
+            prompt: Some("Import".into()),
+        });
+        cx.spawn_in(window, async move |this, cx| {
+            let Ok(Ok(Some(paths))) = paths.await else {
+                return;
+            };
+            let _ = this.update_in(cx, |this, window, cx| this.import_files(&paths, window, cx));
+        })
+        .detach();
+    }
+
+    fn import_files(&mut self, paths: &[PathBuf], window: &mut Window, cx: &mut Context<Self>) {
+        let mut first: Option<PathBuf> = None;
+        for path in paths {
+            match self.workspace.import(path) {
+                Ok(imported) => {
+                    let title = self
+                        .workspace
+                        .find(&imported.file)
+                        .map(|c| c.title())
+                        .unwrap_or_default();
+                    let mut note = Notification::success(format!("Imported \"{title}\""));
+                    if imported.external_refs {
+                        note = Notification::warning(format!(
+                            "Imported \"{title}\", but it references other files that were not \
+                             copied. Copy them next to {} for those $refs to resolve.",
+                            imported.file.file_name().unwrap_or_default().to_string_lossy()
+                        ));
+                    }
+                    window.push_notification(note, cx);
+                    first.get_or_insert(imported.file);
+                }
+                Err(e) => window.push_notification(
+                    Notification::error(format!("{e:#}")).title("Import failed"),
+                    cx,
+                ),
+            }
+        }
+        self.rebuild_rows(cx);
+        let Some(file) = first else { return };
+        self.collapsed.remove(&file);
+        let first_op = self
+            .workspace
+            .find(&file)
+            .and_then(|c| c.operations().into_iter().next())
+            .map(|op| op.key);
+        if let Some(key) = first_op {
+            self.open_request(file, key, window, cx);
+        }
+        self.rebuild_rows(cx);
     }
 
     fn open_folder(&mut self, _: &OpenFolder, window: &mut Window, cx: &mut Context<Self>) {
@@ -1588,6 +1674,12 @@ impl Render for RocketApp {
             .on_action(cx.listener(Self::save))
             .on_action(cx.listener(Self::new_request))
             .on_action(cx.listener(Self::new_collection))
+            .on_action(cx.listener(Self::import_openapi))
+            // Dropping OpenAPI files anywhere on the window imports them.
+            .on_drop(cx.listener(|this, paths: &ExternalPaths, window, cx| {
+                this.import_files(paths.paths(), window, cx)
+            }))
+            .drag_over::<ExternalPaths>(|style, _, _, cx| style.bg(cx.theme().drop_target))
             .on_action(cx.listener(Self::open_folder))
             .on_action(cx.listener(Self::reload))
             .on_action(cx.listener(Self::focus_url))

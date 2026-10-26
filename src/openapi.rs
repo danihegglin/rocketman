@@ -279,6 +279,9 @@ impl Collection {
         };
         let version = doc.get("openapi").and_then(Value::as_str).unwrap_or("");
         if !version.starts_with("3.") {
+            if doc.get("swagger").is_some() {
+                bail!("Swagger 2.0 is not supported; convert it to OpenAPI 3 first");
+            }
             bail!("not an OpenAPI 3.x document");
         }
         Ok(Collection { file, format, doc })

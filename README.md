@@ -22,6 +22,7 @@ The default folder is `~/Library/Application Support/rocketman/collections` (pla
 | ⌘S | Save the request |
 | ⌘N / ⇧⌘N | New request / new collection |
 | ⌘L | Focus the URL |
+| ⌘I | Import an OpenAPI file as a collection |
 | ⌘O | Open another folder |
 | ⌘R | Reload collections from disk |
 
@@ -30,6 +31,8 @@ Right-click a collection or request for rename, duplicate, delete and reveal-in-
 ## How requests map to OpenAPI
 
 Every `*.yaml`, `*.yml` or `*.json` file with an `openapi: 3.x` key is a collection; `info.title` is its name.
+
+**Import** (⌘I, the sidebar `+` menu, or drag files onto the window) copies an existing OpenAPI 3.x file into the current folder byte-for-byte, so its comments and formatting are kept until you first save a change. Files that aren't OpenAPI 3.x (including Swagger 2.0) are rejected with a message and nothing is written. If the spec `$ref`s other files, you're warned to copy those alongside it.
 
 | Editor | OpenAPI |
 | --- | --- |

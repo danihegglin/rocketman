@@ -53,6 +53,7 @@ fn main() {
                 KeyBinding::new(secondary!("n"), NewRequest, None),
                 KeyBinding::new(secondary!("shift-n"), NewCollection, None),
                 KeyBinding::new(secondary!("o"), OpenFolder, None),
+                KeyBinding::new(secondary!("i"), ImportOpenApi, None),
                 KeyBinding::new(secondary!("r"), Reload, None),
                 KeyBinding::new(secondary!("l"), FocusUrl, None),
                 KeyBinding::new("escape", Cancel, Some("Rocketman")),
@@ -63,6 +64,7 @@ fn main() {
                 Menu::new("File").items([
                     MenuItem::action("New Request", NewRequest),
                     MenuItem::action("New Collection…", NewCollection),
+                    MenuItem::action("Import OpenAPI File…", ImportOpenApi),
                     MenuItem::separator(),
                     MenuItem::action("Open Folder…", OpenFolder),
                     MenuItem::action("Reload Collections", Reload),
