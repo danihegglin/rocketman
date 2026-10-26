@@ -55,7 +55,33 @@ jobs:
           gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" --generate-notes $prerelease
           echo "created=true" >> "$GITHUB_OUTPUT"
 
-  # Release binaries can be added as a job here with `needs: tag` and
-  # `if: needs.tag.outputs.created == 'true'`, uploading with
-  # `gh release upload ${{ needs.tag.outputs.tag }} <files>`. Releases created
-  # with GITHUB_TOKEN do not trigger `on: release` in other workflows.
+  # Attaches the glibc 2.17 Linux binary to the new release. This runs here rather
+  # than in a separate `on: release` workflow because releases created with
+  # GITHUB_TOKEN don't trigger other workflows.
+  linux-glibc217:
+    needs: tag
+    if: needs.tag.outputs.created == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libxkbcommon-x11-dev libxcb1-dev
+          pip install ziglang==0.13.0
+          cargo install cargo-zigbuild --locked
+
+      - name: Build
+        run: scripts/build-linux-glibc217.sh
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.tag.outputs.tag }}
+        run: |
+          asset="rocketman-$TAG-x86_64-linux-glibc2.17.tar.gz"
+          tar -czf "$asset" -C target/x86_64-unknown-linux-gnu/release rocketman
+          gh release upload "$TAG" "$asset"
