@@ -58,3 +58,7 @@ Two requests with the same method and path can't exist in one OpenAPI document, 
 ```sh
 cargo test
 ```
+
+## Releasing
+
+Bump `version` in `Cargo.toml` (run `cargo check` to update `Cargo.lock`) and merge to `main`. The Release workflow tags the commit as `v<version>` and publishes a GitHub release with generated notes. Versions with a suffix such as `0.2.0-beta.1` are marked as pre-releases.
