@@ -53,6 +53,19 @@ Two requests with the same method and path can't exist in one OpenAPI document, 
 - Unsaved edits are kept per request while you switch around (dot in the sidebar). Closing or quitting with unsaved edits asks first.
 - The sidebar is a virtualized list.
 
+## Linux builds for older distros (glibc 2.17)
+
+A plain `cargo build` on Linux links against the build machine's glibc, so the binary won't start on older systems. To build one that runs on glibc 2.17 and newer (CentOS/RHEL 7 onwards):
+
+```sh
+sudo apt-get install libxkbcommon-dev libxkbcommon-x11-dev libxcb1-dev
+pip install ziglang==0.13.0
+cargo install cargo-zigbuild --locked
+scripts/build-linux-glibc217.sh
+```
+
+The binary lands in `target/x86_64-unknown-linux-gnu/release/rocketman`, and the script fails if it needs any glibc symbol newer than 2.17. At runtime the target machine needs `libxkbcommon-x11` and `libxcb`, plus a Vulkan driver. CI builds it the same way and checks that it loads on CentOS 7.
+
 ## Tests
 
 ```sh
