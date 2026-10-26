@@ -1,0 +1,87 @@
+# Tags and releases a new version whenever the version in Cargo.toml changes on main.
+#
+# To cut a release: bump `version` in Cargo.toml (and Cargo.lock) and merge to main.
+# If tag v<version> does not exist yet, this creates it along with a GitHub release
+# whose notes are generated from the merged PRs since the previous tag.
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths: [Cargo.toml]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    outputs:
+      created: ${{ steps.check.outputs.created }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read version from Cargo.toml
+        id: version
+        run: |
+          version=$(sed -n '/^\[package\]/,/^\[/{s/^version *= *"\(.*\)"/\1/p}' Cargo.toml | head -n1)
+          if [ -z "$version" ]; then
+            echo "::error::Could not read package version from Cargo.toml"
+            exit 1
+          fi
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Create tag and release if new
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "Tag $TAG already exists, nothing to do."
+            echo "created=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          prerelease=""
+          case "$TAG" in *-*) prerelease="--prerelease" ;; esac
+          gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" --generate-notes $prerelease
+          echo "created=true" >> "$GITHUB_OUTPUT"
+
+  # Attaches the glibc 2.17 Linux binary to the new release. This runs here rather
+  # than in a separate `on: release` workflow because releases created with
+  # GITHUB_TOKEN don't trigger other workflows.
+  linux-glibc217:
+    needs: tag
+    if: needs.tag.outputs.created == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libxkbcommon-x11-dev libxcb1-dev libfontconfig-dev libfreetype-dev
+          pip install ziglang==0.13.0
+          cargo install cargo-zigbuild --locked
+
+      - name: Build
+        run: scripts/build-linux-glibc217.sh
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.tag.outputs.tag }}
+        run: |
+          asset="rocketman-$TAG-x86_64-linux-glibc2.17.tar.gz"
+          tar -czf "$asset" -C target/x86_64-unknown-linux-gnu/release rocketman
+          gh release upload "$TAG" "$asset"
