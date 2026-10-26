@@ -1,0 +1,41 @@
+name: Linux (glibc 2.17)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libxkbcommon-x11-dev libxcb1-dev libfontconfig-dev libfreetype-dev
+          pip install ziglang==0.13.0
+          cargo install cargo-zigbuild --locked
+
+      - name: Build and check glibc symbol versions
+        run: scripts/build-linux-glibc217.sh
+
+      - name: Load on CentOS 7 (glibc 2.17)
+        run: |
+          docker run --rm -v "$PWD/target/x86_64-unknown-linux-gnu/release/rocketman:/rocketman:ro" centos:7 bash -c '
+            sed -i -e "s/^mirrorlist/#mirrorlist/" -e "s|^#baseurl=http://mirror.centos.org|baseurl=https://vault.centos.org|" /etc/yum.repos.d/*.repo
+            yum install -y -q libxkbcommon-x11 libxcb
+            ldd --version | head -1
+            ldd -r /rocketman 2>&1 | tee /tmp/ldd.txt
+            ! grep -E "not found|version .* not found|undefined symbol" /tmp/ldd.txt'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rocketman-x86_64-linux-glibc2.17
+          path: target/x86_64-unknown-linux-gnu/release/rocketman
