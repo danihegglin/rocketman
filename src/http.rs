@@ -164,6 +164,19 @@ pub fn execute(req: PreparedRequest) -> Result<Response> {
     })
 }
 
+/// Runs the request on a dedicated thread and hands the result to `done` there:
+/// blocking network I/O never touches a UI thread, and a hung server can't
+/// starve anything else.
+pub fn spawn(
+    req: PreparedRequest,
+    done: impl FnOnce(Result<Response>) + std::marker::Send + 'static,
+) -> std::io::Result<()> {
+    std::thread::Builder::new()
+        .name("rocketman-http".into())
+        .spawn(move || done(execute(req)))
+        .map(|_| ())
+}
+
 fn send(
     b: ureq::RequestBuilder<ureq::typestate::WithBody>,
     body: Option<Vec<u8>>,

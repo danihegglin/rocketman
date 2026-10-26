@@ -1,6 +1,6 @@
 //! Editable key/value table used for query parameters, path variables and headers.
 
-use crate::openapi::Param;
+use rocketman::openapi::Param;
 use gpui_kit::component::{
     ActiveTheme as _, IconName, Sizable as _, h_flex,
     button::{Button, ButtonVariants as _},
