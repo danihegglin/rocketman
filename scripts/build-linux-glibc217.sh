@@ -5,7 +5,8 @@
 # instead of the host's glibc. Needs on the build machine:
 #   - zig 0.13      (pip install ziglang==0.13.0, or a zig binary on PATH)
 #   - cargo-zigbuild (cargo install cargo-zigbuild --locked)
-#   - libxkbcommon-dev, libxkbcommon-x11-dev, libxcb1-dev (headers/.so to link against)
+#   - libxkbcommon-dev, libxkbcommon-x11-dev, libxcb1-dev, libfontconfig-dev,
+#     libfreetype-dev (headers/.so to link against)
 #
 # Output: target/x86_64-unknown-linux-gnu/release/rocketman
 set -euo pipefail

@@ -58,7 +58,7 @@ Two requests with the same method and path can't exist in one OpenAPI document, 
 A plain `cargo build` on Linux links against the build machine's glibc, so the binary won't start on older systems. To build one that runs on glibc 2.17 and newer (CentOS/RHEL 7 onwards):
 
 ```sh
-sudo apt-get install libxkbcommon-dev libxkbcommon-x11-dev libxcb1-dev
+sudo apt-get install libxkbcommon-dev libxkbcommon-x11-dev libxcb1-dev libfontconfig-dev libfreetype-dev
 pip install ziglang==0.13.0
 cargo install cargo-zigbuild --locked
 scripts/build-linux-glibc217.sh
