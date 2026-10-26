@@ -1,7 +1,9 @@
-use crate::http::{self, Response, format_duration, format_size};
+use rocketman::http::{self, Response, format_duration, format_size};
 use crate::kv::{KvEditor, KvEvent};
-use crate::openapi::{Method, OpKey, RequestSpec, is_json_type, path_templates};
-use crate::workspace::{Workspace, config};
+use rocketman::openapi::{Method, OpKey, RequestSpec, path_templates};
+use rocketman::session::{
+    BODY_TYPES, DraftKey, Level, Notice, Row, Session, body_language, content_type_label,
+};
 use gpui_kit::component::{
     ActiveTheme as _, Disableable as _, Icon, IconName, Sizable as _, StyledExt as _, WindowExt as _,
     h_flex,
@@ -17,7 +19,6 @@ use gpui_kit::component::{
 };
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
-use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
@@ -38,31 +39,6 @@ actions!(
     ]
 );
 
-const BODY_TYPES: [(&str, &str); 5] = [
-    ("JSON", "application/json"),
-    ("Text", "text/plain"),
-    ("XML", "application/xml"),
-    ("Form", "application/x-www-form-urlencoded"),
-    ("HTML", "text/html"),
-];
-
-type DraftKey = (PathBuf, OpKey);
-
-#[derive(Clone)]
-enum Row {
-    Collection {
-        file: PathBuf,
-        title: SharedString,
-        count: usize,
-        collapsed: bool,
-    },
-    Request {
-        file: PathBuf,
-        key: OpKey,
-        label: SharedString,
-    },
-}
-
 enum ResponseState {
     Idle,
     Loading { started: Instant, _task: Task<()> },
@@ -72,16 +48,14 @@ enum ResponseState {
 
 pub struct RocketApp {
     focus: FocusHandle,
-    workspace: Workspace,
+    session: Session,
 
     filter: Entity<InputState>,
-    collapsed: HashSet<PathBuf>,
     rows: Arc<Vec<Row>>,
     list_scroll: UniformListScrollHandle,
 
     active: Option<DraftKey>,
     dirty: bool,
-    drafts: HashMap<DraftKey, RequestSpec>,
     /// True while the editor is being filled programmatically.
     loading: bool,
 
@@ -153,14 +127,12 @@ impl RocketApp {
 
         let mut this = Self {
             focus: cx.focus_handle(),
-            workspace: Workspace::load(&dir),
+            session: Session::open(&dir),
             filter,
-            collapsed: HashSet::new(),
             rows: Arc::default(),
             list_scroll: UniformListScrollHandle::new(),
             active: None,
             dirty: false,
-            drafts: HashMap::new(),
             loading: false,
             method: Method::Get,
             content_type: String::new(),
@@ -184,20 +156,12 @@ impl RocketApp {
     }
 
     fn after_workspace_load(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        for (file, err) in &self.workspace.errors {
-            let name = file.file_name().unwrap_or_default().to_string_lossy();
-            window.push_notification(
-                Notification::error(format!("{name}: {err}")).title("Could not load collection"),
-                cx,
-            );
+        for notice in self.session.load_errors() {
+            notify(window, notice, cx);
         }
         self.rebuild_rows(cx);
         // Open the first request so the window is immediately useful.
-        let first = self.rows.iter().find_map(|r| match r {
-            Row::Request { file, key, .. } => Some((file.clone(), key.clone())),
-            _ => None,
-        });
-        if let Some((file, key)) = first {
+        if let Some((file, key)) = self.session.first_request() {
             self.open_request(file, key, window, cx);
         }
     }
@@ -215,10 +179,10 @@ impl RocketApp {
     /// Returns true when the window may close right away; otherwise asks first.
     fn confirm_close(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
         self.stash_active(cx);
-        if self.allow_close || self.drafts.is_empty() {
+        if self.allow_close || self.session.drafts.is_empty() {
             return true;
         }
-        let count = self.drafts.len();
+        let count = self.session.drafts.len();
         let answer = window.prompt(
             PromptLevel::Warning,
             &format!(
@@ -252,44 +216,7 @@ impl RocketApp {
     // ----- sidebar ---------------------------------------------------------
 
     fn rebuild_rows(&mut self, cx: &mut Context<Self>) {
-        let filter = self.filter.read(cx).value().trim().to_lowercase();
-        let mut rows = Vec::new();
-        for c in &self.workspace.collections {
-            let ops = c.operations();
-            let matching: Vec<_> = ops
-                .iter()
-                .filter(|op| {
-                    filter.is_empty()
-                        || op.name.to_lowercase().contains(&filter)
-                        || op.key.path.to_lowercase().contains(&filter)
-                        || op.key.method.as_str().eq_ignore_ascii_case(&filter)
-                })
-                .collect();
-            if !filter.is_empty() && matching.is_empty() {
-                continue;
-            }
-            let collapsed = filter.is_empty() && self.collapsed.contains(&c.file);
-            rows.push(Row::Collection {
-                file: c.file.clone(),
-                title: c.title().into(),
-                count: ops.len(),
-                collapsed,
-            });
-            if !collapsed {
-                for op in matching {
-                    let label = if op.name.is_empty() {
-                        op.key.path.clone()
-                    } else {
-                        op.name.clone()
-                    };
-                    rows.push(Row::Request {
-                        file: c.file.clone(),
-                        key: op.key.clone(),
-                        label: label.into(),
-                    });
-                }
-            }
-        }
+        let rows = self.session.rows(&self.filter.read(cx).value());
         self.rows = Arc::new(rows);
         cx.notify();
     }
@@ -343,9 +270,7 @@ impl RocketApp {
                             .child(count.to_string()),
                     )
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        if !this.collapsed.remove(&toggle_file) {
-                            this.collapsed.insert(toggle_file.clone());
-                        }
+                        this.session.toggle_collapsed(&toggle_file);
                         this.rebuild_rows(cx);
                     }))
                     .context_menu(move |menu, _, _| {
@@ -375,7 +300,7 @@ impl RocketApp {
             Row::Request { file, key, label } => {
                 let draft_key = (file.clone(), key.clone());
                 let selected = self.active.as_ref() == Some(&draft_key);
-                let dirty = self.drafts.contains_key(&draft_key) || (selected && self.dirty);
+                let dirty = self.session.is_dirty(&draft_key) || (selected && self.dirty);
                 let method = key.method;
                 let open_file = file.clone();
                 let open_key = key.clone();
@@ -442,7 +367,7 @@ impl RocketApp {
     fn render_sidebar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         let count = self.rows.len();
-        let dir = self.workspace.dir.to_string_lossy().to_string();
+        let dir = self.session.dir().to_string_lossy().to_string();
         v_flex()
             .size_full()
             .bg(theme.sidebar)
@@ -571,7 +496,7 @@ impl RocketApp {
                     .find(|p| p.name == n)
                     .map(|p| p.value.clone())
                     .unwrap_or_default();
-                crate::openapi::Param::new(n, value)
+                rocketman::openapi::Param::new(n, value)
             })
             .collect();
         self.path_params
@@ -625,7 +550,7 @@ impl RocketApp {
         if let Some(key) = self.active.clone() {
             if self.dirty {
                 let spec = self.snapshot(cx);
-                self.drafts.insert(key, spec);
+                self.session.drafts.insert(key, spec);
             }
         }
     }
@@ -636,16 +561,8 @@ impl RocketApp {
             return;
         }
         self.stash_active(cx);
-        let (spec, dirty) = match self.drafts.remove(&target) {
-            Some(draft) => (draft, true),
-            None => match self
-                .workspace
-                .find(&target.0)
-                .and_then(|c| c.load_request(&target.1))
-            {
-                Some(spec) => (spec, false),
-                None => return,
-            },
+        let Some((spec, dirty)) = self.session.take_request(&target) else {
+            return;
         };
         self.active = Some(target);
         self.load_into_editor(&spec, window, cx);
@@ -661,16 +578,12 @@ impl RocketApp {
             return;
         };
         let spec = self.snapshot(cx);
-        match self.save_spec(&file, &key, &spec) {
+        match self.session.save_request(&file, &key, &spec) {
             Ok(new_key) => {
                 self.dirty = false;
                 self.active = Some((file.clone(), new_key.clone()));
                 // Reload: the stored form is canonical (e.g. URL query moved to params).
-                if let Some(saved) = self
-                    .workspace
-                    .find(&file)
-                    .and_then(|c| c.load_request(&new_key))
-                {
+                if let Some(saved) = self.session.stored_request(&file, &new_key) {
                     if saved != spec {
                         self.load_into_editor(&saved, window, cx);
                     }
@@ -681,33 +594,12 @@ impl RocketApp {
         }
     }
 
-    /// Updates the document and writes it to disk; the in-memory document is
-    /// rolled back if the write fails so memory and disk never diverge.
-    fn save_spec(&mut self, file: &Path, key: &OpKey, spec: &RequestSpec) -> anyhow::Result<OpKey> {
-        let coll = self
-            .workspace
-            .find_mut(file)
-            .ok_or_else(|| anyhow::anyhow!("collection no longer exists"))?;
-        let backup = coll.doc.clone();
-        let result = coll
-            .save_request(Some(key), spec)
-            .and_then(|new_key| coll.save().map(|_| new_key));
-        if result.is_err() {
-            coll.doc = backup;
-        }
-        result
-    }
-
     fn save_all(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
         self.stash_active(cx);
-        let drafts: Vec<_> = self.drafts.drain().collect();
-        let mut ok = true;
-        for ((file, key), spec) in drafts {
-            if let Err(e) = self.save_spec(&file, &key, &spec) {
-                ok = false;
-                window.push_notification(Notification::error(format!("{e:#}")), cx);
-                self.drafts.insert((file, key), spec);
-            }
+        let errors = self.session.save_drafts();
+        let ok = errors.is_empty();
+        for e in errors {
+            window.push_notification(Notification::error(format!("{e:#}")), cx);
         }
         if ok {
             self.dirty = false;
@@ -717,71 +609,31 @@ impl RocketApp {
     }
 
     fn new_request(&mut self, _: &NewRequest, window: &mut Window, cx: &mut Context<Self>) {
-        let file = self
-            .active
-            .as_ref()
-            .map(|(f, _)| f.clone())
-            .or_else(|| self.workspace.collections.first().map(|c| c.file.clone()));
-        match file {
+        match self.session.default_collection(self.active.as_ref()) {
             Some(file) => self.new_request_in(&file, window, cx),
             None => self.new_collection(&NewCollection, window, cx),
         }
     }
 
     fn new_request_in(&mut self, file: &Path, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(coll) = self.workspace.find_mut(file) else {
-            return;
-        };
-        let key = coll.unique_key("/new-request", Method::Get);
-        let server = coll
-            .doc
-            .pointer("/servers/0/url")
-            .and_then(|v| v.as_str())
-            .unwrap_or("http://localhost:8080")
-            .trim_end_matches('/')
-            .to_string();
-        let spec = RequestSpec {
-            name: "New request".into(),
-            method: Method::Get,
-            url: format!("{server}{}", key.path),
-            ..Default::default()
-        };
-        let backup = coll.doc.clone();
-        let result = coll
-            .save_request(None, &spec)
-            .and_then(|k| coll.save().map(|_| k));
-        match result {
+        match self.session.new_request(file) {
             Ok(key) => {
-                self.collapsed.remove(file);
                 self.rebuild_rows(cx);
                 self.open_request(file.to_path_buf(), key, window, cx);
                 // Deferred so a closing dialog can't restore focus over it.
                 cx.defer_in(window, |this, window, cx| this.focus_url(&FocusUrl, window, cx));
             }
-            Err(e) => {
-                coll.doc = backup;
-                window.push_notification(Notification::error(format!("{e:#}")), cx);
-            }
+            Err(e) => window.push_notification(Notification::error(format!("{e:#}")), cx),
         }
     }
 
     fn duplicate_request(&mut self, (file, key): DraftKey, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(coll) = self.workspace.find_mut(&file) else {
-            return;
-        };
-        let backup = coll.doc.clone();
-        match coll
-            .duplicate_request(&key)
-            .and_then(|k| coll.save().map(|_| k))
-        {
+        match self.session.duplicate_request(&file, &key) {
             Ok(new_key) => {
                 self.rebuild_rows(cx);
                 self.open_request(file, new_key, window, cx);
             }
-            Err(e) => {
-                coll.doc = backup;
-                window.push_notification(Notification::error(format!("{e:#}")), cx);
-            }
+            Err(e) => window.push_notification(Notification::error(format!("{e:#}")), cx),
         }
     }
 
@@ -798,18 +650,11 @@ impl RocketApp {
                 return;
             }
             let _ = this.update_in(cx, |this, window, cx| {
-                let Some(coll) = this.workspace.find_mut(&file) else {
-                    return;
-                };
-                let backup = coll.doc.clone();
-                coll.delete_request(&key);
-                if let Err(e) = coll.save() {
-                    coll.doc = backup;
+                if let Err(e) = this.session.delete_request(&file, &key) {
                     window.push_notification(Notification::error(format!("{e:#}")), cx);
                     return;
                 }
                 let draft_key = (file, key);
-                this.drafts.remove(&draft_key);
                 if this.active.as_ref() == Some(&draft_key) {
                     this.close_editor(window, cx);
                 }
@@ -914,7 +759,7 @@ impl RocketApp {
             "New collection",
             String::new(),
             "Create",
-            |this, name, window, cx| match this.workspace.create_collection(&name) {
+            |this, name, window, cx| match this.session.create_collection(&name) {
                 Ok(file) => {
                     this.rebuild_rows(cx);
                     this.new_request_in(&file, window, cx);
@@ -931,7 +776,7 @@ impl RocketApp {
     }
 
     fn rename_collection(&mut self, file: &Path, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(title) = self.workspace.find(file).map(|c| c.title()) else {
+        let Some(title) = self.session.collection_title(file) else {
             return;
         };
         let file = file.to_path_buf();
@@ -940,19 +785,10 @@ impl RocketApp {
             title,
             "Rename",
             move |this, name, window, cx| {
-                let Some(coll) = this.workspace.find_mut(&file) else {
-                    return true;
-                };
-                let backup = coll.doc.clone();
-                coll.set_title(&name);
-                if let Err(e) = coll.save() {
-                    coll.doc = backup;
+                if let Err(e) = this.session.rename_collection(&file, &name) {
                     window.push_notification(Notification::error(format!("{e:#}")), cx);
                     return false;
                 }
-                this.workspace
-                    .collections
-                    .sort_by_key(|c| c.title().to_lowercase());
                 this.rebuild_rows(cx);
                 true
             },
@@ -962,7 +798,7 @@ impl RocketApp {
     }
 
     fn delete_collection(&mut self, file: &Path, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(title) = self.workspace.find(file).map(|c| c.title()) else {
+        let Some(title) = self.session.collection_title(file) else {
             return;
         };
         let answer = window.prompt(
@@ -978,11 +814,10 @@ impl RocketApp {
                 return;
             }
             let _ = this.update_in(cx, |this, window, cx| {
-                if let Err(e) = this.workspace.delete_collection(&file) {
+                if let Err(e) = this.session.delete_collection(&file) {
                     window.push_notification(Notification::error(format!("{e:#}")), cx);
                     return;
                 }
-                this.drafts.retain(|(f, _), _| f != &file);
                 if this.active.as_ref().is_some_and(|(f, _)| f == &file) {
                     this.close_editor(window, cx);
                 }
@@ -1009,44 +844,14 @@ impl RocketApp {
     }
 
     fn import_files(&mut self, paths: &[PathBuf], window: &mut Window, cx: &mut Context<Self>) {
-        let mut first: Option<PathBuf> = None;
-        for path in paths {
-            match self.workspace.import(path) {
-                Ok(imported) => {
-                    let title = self
-                        .workspace
-                        .find(&imported.file)
-                        .map(|c| c.title())
-                        .unwrap_or_default();
-                    let mut note = Notification::success(format!("Imported \"{title}\""));
-                    if imported.external_refs {
-                        note = Notification::warning(format!(
-                            "Imported \"{title}\", but it references other files that were not \
-                             copied. Copy them next to {} for those $refs to resolve.",
-                            imported.file.file_name().unwrap_or_default().to_string_lossy()
-                        ));
-                    }
-                    window.push_notification(note, cx);
-                    first.get_or_insert(imported.file);
-                }
-                Err(e) => window.push_notification(
-                    Notification::error(format!("{e:#}")).title("Import failed"),
-                    cx,
-                ),
-            }
+        let (notices, open) = self.session.import_files(paths);
+        for notice in notices {
+            notify(window, notice, cx);
         }
         self.rebuild_rows(cx);
-        let Some(file) = first else { return };
-        self.collapsed.remove(&file);
-        let first_op = self
-            .workspace
-            .find(&file)
-            .and_then(|c| c.operations().into_iter().next())
-            .map(|op| op.key);
-        if let Some(key) = first_op {
+        if let Some((file, key)) = open {
             self.open_request(file, key, window, cx);
         }
-        self.rebuild_rows(cx);
     }
 
     fn open_folder(&mut self, _: &OpenFolder, window: &mut Window, cx: &mut Context<Self>) {
@@ -1072,10 +877,7 @@ impl RocketApp {
         if !self.save_all(window, cx) {
             return;
         }
-        config::remember_dir(&dir);
-        self.workspace = Workspace::load(&dir);
-        self.drafts.clear();
-        self.collapsed.clear();
+        self.session.switch_workspace(&dir);
         self.close_editor(window, cx);
         self.after_workspace_load(window, cx);
     }
@@ -1084,22 +886,14 @@ impl RocketApp {
         self.stash_active(cx);
         let active = self.active.take();
         self.dirty = false;
-        self.workspace = Workspace::load(&self.workspace.dir.clone());
-        // Drafts for requests that disappeared on disk are dropped.
-        let ws = &self.workspace;
-        self.drafts
-            .retain(|(f, k), _| ws.find(f).is_some_and(|c| c.contains(k)));
-        for (file, err) in &self.workspace.errors {
-            let name = file.file_name().unwrap_or_default().to_string_lossy();
-            window.push_notification(
-                Notification::error(format!("{name}: {err}")).title("Could not load collection"),
-                cx,
-            );
+        self.session.reload();
+        for notice in self.session.load_errors() {
+            notify(window, notice, cx);
         }
         self.rebuild_rows(cx);
         match active {
-            Some((f, k)) if self.workspace.find(&f).is_some_and(|c| c.contains(&k)) => {
-                self.open_request(f, k, window, cx)
+            Some(target) if self.session.contains(&target) => {
+                self.open_request(target.0, target.1, window, cx)
             }
             _ => self.close_editor(window, cx),
         }
@@ -1159,14 +953,9 @@ impl RocketApp {
         self.request_seq += 1;
         let seq = self.request_seq;
         let (tx, rx) = futures::channel::oneshot::channel();
-        // A dedicated thread: blocking network I/O never touches the UI or the
-        // shared executor, and a hung server can't starve anything else.
-        let spawned = std::thread::Builder::new()
-            .name("rocketman-http".into())
-            .spawn(move || {
-                let _ = tx.send(http::execute(prepared));
-            });
-        if let Err(e) = spawned {
+        if let Err(e) = http::spawn(prepared, move |result| {
+            let _ = tx.send(result);
+        }) {
             self.response = ResponseState::Failed(format!("Could not start request: {e}").into());
             cx.notify();
             return;
@@ -1235,7 +1024,7 @@ impl RocketApp {
             "json" => "json",
             _ => "txt",
         };
-        let dir = dirs::download_dir().unwrap_or_else(|| self.workspace.dir.clone());
+        let dir = dirs::download_dir().unwrap_or_else(|| self.session.dir().to_path_buf());
         let path = cx.prompt_for_new_path(&dir, Some(&format!("response.{ext}")));
         cx.spawn_in(window, async move |_, cx| {
             let Ok(Ok(Some(path))) = path.await else {
@@ -1264,15 +1053,7 @@ impl RocketApp {
         let header_count = self.headers.read(cx).filled_count(cx);
         let has_path_params = !self.path_params.read(cx).is_empty();
         let ct = self.content_type.clone();
-        let ct_label: SharedString = if ct.is_empty() {
-            "None".into()
-        } else {
-            BODY_TYPES
-                .iter()
-                .find(|(_, v)| *v == ct)
-                .map(|(l, _)| SharedString::from(*l))
-                .unwrap_or_else(|| ct.clone().into())
-        };
+        let ct_label = SharedString::from(content_type_label(&ct));
 
         let tab_label = |label: &str, count: usize| -> SharedString {
             if count > 0 {
@@ -1721,6 +1502,15 @@ fn method_color(method: Method, cx: &App) -> Hsla {
     }
 }
 
-fn body_language(content_type: &str) -> &'static str {
-    if is_json_type(content_type) { "json" } else { "" }
+/// Shows a core notice as a toast.
+fn notify(window: &mut Window, notice: Notice, cx: &mut App) {
+    let mut n = match notice.level {
+        Level::Success => Notification::success(notice.text),
+        Level::Warning => Notification::warning(notice.text),
+        Level::Error => Notification::error(notice.text),
+    };
+    if let Some(title) = notice.title {
+        n = n.title(title);
+    }
+    window.push_notification(n, cx);
 }

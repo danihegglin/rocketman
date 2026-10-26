@@ -1,6 +1,6 @@
 # rocketman
 
-A fast, minimal HTTP client — think Postman without the weight — built in Rust with [GPUI](https://www.gpui.rs/) (via [gpui-kit](https://gpui-kit.com)).
+A fast, minimal HTTP client — think Postman without the weight — built in Rust with [GPUI](https://www.gpui.rs/) (via [gpui-kit](https://gpui-kit.com)), plus a terminal UI built with [ratatui](https://ratatui.rs).
 
 Collections are plain **OpenAPI 3.x** files, so they live happily in git next to your code and work with every other OpenAPI tool.
 
@@ -27,6 +27,32 @@ The default folder is `~/Library/Application Support/rocketman/collections` (pla
 | ⌘R | Reload collections from disk |
 
 Right-click a collection or request for rename, duplicate, delete and reveal-in-Finder.
+
+## Terminal UI
+
+`rocketman-tui` offers the same features in a terminal: the collection sidebar with filter, the request editor (name, method, URL, path variables, query params, headers, body), sending and cancelling, the response with status, timing, size, body and headers, and new / rename / duplicate / delete / import / open folder / reload. Both frontends share the same core (`src/lib.rs`), so collections and behaviour are identical.
+
+```sh
+cargo run --release --bin rocketman-tui              # last used folder
+cargo run --release --bin rocketman-tui -- ./api     # any folder of OpenAPI files
+cargo install --path . --no-default-features --features tui   # terminal only, no GPUI/system graphics libraries needed
+```
+
+| Key | Action |
+| --- | --- |
+| Tab / Shift-Tab | Next / previous pane (sidebar, request, response) |
+| F5, Ctrl-↵ or Alt-↵ (↵ in the URL too) | Send |
+| Esc | Cancel the in-flight request |
+| Ctrl-S | Save the request |
+| Ctrl-N / Alt-N | New request / new collection |
+| Ctrl-L | Focus the URL |
+| Ctrl-I or Alt-I | Import an OpenAPI file as a collection |
+| Ctrl-O | Open another folder |
+| Ctrl-R | Reload collections from disk |
+| Ctrl-Q | Quit (asks about unsaved requests) |
+| F1 | All keys |
+
+In the sidebar, `/` filters, `n` / `N` create, `d` duplicates, `r` renames, `x` deletes. In the response, `v` switches between body and headers, `y` copies (via OSC 52, works over SSH) and `s` saves the body to a file.
 
 ## How requests map to OpenAPI
 
