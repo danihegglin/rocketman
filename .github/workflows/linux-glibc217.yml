@@ -19,25 +19,35 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libxkbcommon-dev libxkbcommon-x11-dev libxcb1-dev libfontconfig-dev libfreetype-dev
+          sudo apt-get install -y libxkbcommon-dev libxkbcommon-x11-dev libxcb1-dev libfontconfig-dev libfreetype-dev patchelf
           pip install ziglang==0.13.0
           cargo install cargo-zigbuild --locked
 
       - name: Build and check glibc symbol versions
         run: scripts/build-linux-glibc217.sh
 
-      - name: Load on CentOS 7 (glibc 2.17)
+      - name: Package
+        run: scripts/package-linux-glibc217.sh ci dist
+
+      # Without libxkbcommon or libxkbcommon-x11 installed: the tarball bundles them.
+      - name: Load on CentOS 7 (glibc 2.17) and Rocky Linux 9 (RHEL 9)
         run: |
-          docker run --rm -v "$PWD/target/x86_64-unknown-linux-gnu/release:/bin-out:ro" centos:7 bash -c '
-            sed -i -e "s/^mirrorlist/#mirrorlist/" -e "s|^#baseurl=http://mirror.centos.org|baseurl=https://vault.centos.org|" /etc/yum.repos.d/*.repo
-            yum install -y -q libxkbcommon-x11 libxcb
-            ldd --version | head -1
-            ldd -r /bin-out/rocketman /bin-out/rocketman-tui 2>&1 | tee /tmp/ldd.txt
-            ! grep -E "not found|version .* not found|undefined symbol" /tmp/ldd.txt'
+          mkdir out && tar -xzf dist/*.tar.gz -C out
+          for image in centos:7 rockylinux/rockylinux:9; do
+            echo "::group::$image"
+            docker run --rm -v "$PWD/out:/bin-out:ro" "$image" bash -ec '
+              if [ -f /etc/yum.repos.d/CentOS-Base.repo ]; then
+                sed -i -e "s/^mirrorlist/#mirrorlist/" -e "s|^#baseurl=http://mirror.centos.org|baseurl=https://vault.centos.org|" /etc/yum.repos.d/*.repo
+              fi
+              yum install -y -q libxcb
+              if rpm -q libxkbcommon-x11; then exit 1; fi
+              ldd --version | head -1
+              ldd -r /bin-out/rocketman /bin-out/rocketman-tui 2>&1 | tee /tmp/ldd.txt
+              ! grep -E "not found|version .* not found|undefined symbol" /tmp/ldd.txt'
+            echo "::endgroup::"
+          done
 
       - uses: actions/upload-artifact@v4
         with:
           name: rocketman-x86_64-linux-glibc2.17
-          path: |
-            target/x86_64-unknown-linux-gnu/release/rocketman
-            target/x86_64-unknown-linux-gnu/release/rocketman-tui
+          path: dist/*.tar.gz

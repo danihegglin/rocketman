@@ -90,7 +90,7 @@ cargo install cargo-zigbuild --locked
 scripts/build-linux-glibc217.sh
 ```
 
-The binaries land in `target/x86_64-unknown-linux-gnu/release/` (`rocketman` and `rocketman-tui`), and the script fails if either needs any glibc symbol newer than 2.17. At runtime the desktop app needs `libxkbcommon-x11` and `libxcb`, plus a Vulkan driver; the terminal app needs nothing beyond glibc. CI builds it the same way and checks that it loads on CentOS 7.
+The binaries land in `target/x86_64-unknown-linux-gnu/release/` (`rocketman` and `rocketman-tui`), and the script fails if either needs any glibc symbol newer than 2.17. `scripts/package-linux-glibc217.sh <tag> <out-dir>` (needs docker and patchelf) then packs them into the release tarball together with `libxkbcommon`, `libxkbcommon-x11` and `libxcb-xkb` from CentOS 7, which many systems don't have installed (RHEL 9 on Wayland, for example). At runtime the desktop app then needs only `libxcb` and a Vulkan driver from the system; the terminal app needs nothing beyond glibc. CI builds and packages it the same way and checks that the tarball loads on CentOS 7 and Rocky Linux 9 without xkbcommon installed.
 
 ## Tests
 

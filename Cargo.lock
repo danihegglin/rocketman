@@ -5941,7 +5941,7 @@ dependencies = [
 
 [[package]]
 name = "rocketman"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "dirs 7.0.0",
