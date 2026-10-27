@@ -55,7 +55,7 @@ jobs:
           gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" --generate-notes $prerelease
           echo "created=true" >> "$GITHUB_OUTPUT"
 
-  # Attaches the glibc 2.17 Linux binary to the new release. This runs here rather
+  # Attaches the glibc 2.17 Linux binaries (desktop and terminal) to the new release. This runs here rather
   # than in a separate `on: release` workflow because releases created with
   # GITHUB_TOKEN don't trigger other workflows.
   linux-glibc217:
@@ -83,5 +83,5 @@ jobs:
           TAG: ${{ needs.tag.outputs.tag }}
         run: |
           asset="rocketman-$TAG-x86_64-linux-glibc2.17.tar.gz"
-          tar -czf "$asset" -C target/x86_64-unknown-linux-gnu/release rocketman
+          tar -czf "$asset" -C target/x86_64-unknown-linux-gnu/release rocketman rocketman-tui
           gh release upload "$TAG" "$asset"

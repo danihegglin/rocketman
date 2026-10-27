@@ -28,14 +28,16 @@ jobs:
 
       - name: Load on CentOS 7 (glibc 2.17)
         run: |
-          docker run --rm -v "$PWD/target/x86_64-unknown-linux-gnu/release/rocketman:/rocketman:ro" centos:7 bash -c '
+          docker run --rm -v "$PWD/target/x86_64-unknown-linux-gnu/release:/bin-out:ro" centos:7 bash -c '
             sed -i -e "s/^mirrorlist/#mirrorlist/" -e "s|^#baseurl=http://mirror.centos.org|baseurl=https://vault.centos.org|" /etc/yum.repos.d/*.repo
             yum install -y -q libxkbcommon-x11 libxcb
             ldd --version | head -1
-            ldd -r /rocketman 2>&1 | tee /tmp/ldd.txt
+            ldd -r /bin-out/rocketman /bin-out/rocketman-tui 2>&1 | tee /tmp/ldd.txt
             ! grep -E "not found|version .* not found|undefined symbol" /tmp/ldd.txt'
 
       - uses: actions/upload-artifact@v4
         with:
           name: rocketman-x86_64-linux-glibc2.17
-          path: target/x86_64-unknown-linux-gnu/release/rocketman
+          path: |
+            target/x86_64-unknown-linux-gnu/release/rocketman
+            target/x86_64-unknown-linux-gnu/release/rocketman-tui
