@@ -3,6 +3,7 @@ mod kv;
 
 use app::*;
 use gpui_kit::*;
+use gpui_kit::component::TitleBar;
 
 /// ⌘ on macOS, Ctrl elsewhere.
 #[cfg(target_os = "macos")]
@@ -78,10 +79,15 @@ fn main() {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 titlebar: Some(TitlebarOptions {
                     title: Some("Rocketman".into()),
-                    ..Default::default()
+                    ..TitleBar::title_bar_options()
                 }),
+                // The app renders its own `TitleBar` (drag, double-click, window
+                // controls), so ask Linux for client-side decorations everywhere
+                // instead of relying on a compositor that may draw none.
+                window_decorations: Some(WindowDecorations::Client),
+                app_id: Some("rocketman".into()),
                 window_min_size: Some(size(px(720.), px(480.))),
-                ..Default::default()
+                ..TitleBar::window_options()
             };
             let opened = gpui_kit::open_window(options, cx, |window, cx| {
                 let view = cx.new(|cx| RocketApp::new(dir.clone(), window, cx));
