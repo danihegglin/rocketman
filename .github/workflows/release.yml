@@ -70,7 +70,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libxkbcommon-dev libxkbcommon-x11-dev libxcb1-dev libfontconfig-dev libfreetype-dev
+          sudo apt-get install -y libxkbcommon-dev libxkbcommon-x11-dev libxcb1-dev libfontconfig-dev libfreetype-dev patchelf
           pip install ziglang==0.13.0
           cargo install cargo-zigbuild --locked
 
@@ -82,6 +82,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.tag.outputs.tag }}
         run: |
-          asset="rocketman-$TAG-x86_64-linux-glibc2.17.tar.gz"
-          tar -czf "$asset" -C target/x86_64-unknown-linux-gnu/release rocketman rocketman-tui
+          asset=$(scripts/package-linux-glibc217.sh "$TAG" dist)
           gh release upload "$TAG" "$asset"
