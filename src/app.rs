@@ -15,7 +15,7 @@ use gpui_kit::component::{
     spinner::Spinner,
     tab::{Tab, TabBar},
     tooltip::Tooltip,
-    v_flex,
+    v_flex, TitleBar,
 };
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -1467,17 +1467,24 @@ impl Render for RocketApp {
             .on_action(cx.listener(Self::cancel))
             .on_action(cx.listener(Self::quit))
             .size_full()
+            .flex()
+            .flex_col()
             .bg(theme.background)
             .text_color(theme.foreground)
+            // We draw our own title bar: GNOME on Wayland has no server-side
+            // decorations, so without it the window has nothing to drag by.
+            .child(TitleBar::new().child(div().text_sm().child("Rocketman")))
             .child(
-                h_resizable("sidebar-split")
-                    .child(
-                        resizable_panel()
-                            .size(px(270.))
-                            .size_range(px(180.)..px(600.))
-                            .child(sidebar),
-                    )
-                    .child(resizable_panel().child(main)),
+                div().flex_1().min_h_0().child(
+                    h_resizable("sidebar-split")
+                        .child(
+                            resizable_panel()
+                                .size(px(270.))
+                                .size_range(px(180.)..px(600.))
+                                .child(sidebar),
+                        )
+                        .child(resizable_panel().child(main)),
+                ),
             )
     }
 }
