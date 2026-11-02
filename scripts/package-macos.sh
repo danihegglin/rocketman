@@ -19,7 +19,8 @@ cd "$(dirname "$0")/.."
 mkdir -p "$OUT"
 OUT=$(cd "$OUT" && pwd)
 
-VERSION=$(sed -n '/^\[package\]/,/^\[/{s/^version *= *"\(.*\)"/\1/p}' Cargo.toml | head -n1)
+# awk, not sed: BSD sed rejects the GNU-style `{s/…/p}` block.
+VERSION=$(awk -F'"' '/^\[/ { p = ($0 == "[package]") } p && /^version *=/ { print $2; exit }' Cargo.toml)
 export MACOSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET:-11.0}
 TARGETS=(aarch64-apple-darwin x86_64-apple-darwin)
 
