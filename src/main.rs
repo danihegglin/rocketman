@@ -22,6 +22,18 @@ macro_rules! secondary {
     };
 }
 
+/// The app icon for the window, from assets/icon (made by scripts/generate-icons.py).
+fn window_icon() -> Option<std::sync::Arc<image::RgbaImage>> {
+    let png = include_bytes!("../assets/icon/rocketman.png");
+    match image::load_from_memory_with_format(png, image::ImageFormat::Png) {
+        Ok(icon) => Some(std::sync::Arc::new(icon.into_rgba8())),
+        Err(e) => {
+            log::warn!("could not decode the window icon: {e}");
+            None
+        }
+    }
+}
+
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
 
@@ -88,7 +100,10 @@ fn main() {
                 // controls), so ask Linux for client-side decorations everywhere
                 // instead of relying on a compositor that may draw none.
                 window_decorations: Some(WindowDecorations::Client),
+                // Wayland and macOS take the icon from the desktop entry and the app
+                // bundle, Windows from the .exe; X11 wants it set on the window.
                 app_id: Some("rocketman".into()),
+                icon: window_icon(),
                 window_min_size: Some(size(px(720.), px(480.))),
                 ..TitleBar::window_options()
             };

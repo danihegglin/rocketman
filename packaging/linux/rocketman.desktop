@@ -5,6 +5,7 @@ GenericName=HTTP Client
 Comment=A fast, minimal HTTP client with OpenAPI collections
 Exec=rocketman %f
 Icon=rocketman
+StartupWMClass=rocketman
 Terminal=false
 Categories=Development;
 Keywords=HTTP;REST;API;OpenAPI;
