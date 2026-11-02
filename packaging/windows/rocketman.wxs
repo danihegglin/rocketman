@@ -1,0 +1,50 @@
+<!--
+  Windows installer for rocketman, built with WiX Toolset v5 by
+  scripts/package-windows.ps1. Installs both apps to Program Files\rocketman,
+  adds that folder to the system PATH (for rocketman-tui) and puts rocketman
+  in the Start menu. The UpgradeCode must never change: it is how a newer MSI
+  finds and replaces an installed older version.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="rocketman"
+           Manufacturer="rocketman"
+           Version="$(var.Version)"
+           UpgradeCode="30F1F4FC-FD51-43B4-837E-63FE7C088A89"
+           Scope="perMachine">
+    <SummaryInformation Description="A fast, minimal HTTP client with OpenAPI collections" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of rocketman is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/danihegglin/rocketman" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="rocketman">
+        <Component Id="DesktopApp">
+          <File Id="rocketman.exe" Source="$(var.BinDir)\rocketman.exe" KeyPath="yes">
+            <Shortcut Id="StartMenuShortcut"
+                      Directory="ProgramMenuFolder"
+                      Name="rocketman"
+                      Description="A fast, minimal HTTP client with OpenAPI collections"
+                      WorkingDirectory="INSTALLFOLDER"
+                      Advertise="yes" />
+          </File>
+        </Component>
+        <Component Id="TerminalApp">
+          <File Id="rocketman_tui.exe" Source="$(var.BinDir)\rocketman-tui.exe" KeyPath="yes" />
+          <Environment Id="PathEntry" Name="PATH" Value="[INSTALLFOLDER]"
+                       Action="set" Part="last" System="yes" Permanent="no" />
+        </Component>
+        <Component Id="License">
+          <File Id="LICENSE" Source="$(var.SourceDir)\LICENSE" Name="LICENSE.txt" KeyPath="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="Main">
+      <ComponentRef Id="DesktopApp" />
+      <ComponentRef Id="TerminalApp" />
+      <ComponentRef Id="License" />
+    </Feature>
+  </Package>
+</Wix>

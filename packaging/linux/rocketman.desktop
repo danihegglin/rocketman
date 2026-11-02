@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=rocketman
+GenericName=HTTP Client
+Comment=A fast, minimal HTTP client with OpenAPI collections
+Exec=rocketman %f
+Icon=rocketman
+Terminal=false
+Categories=Development;
+Keywords=HTTP;REST;API;OpenAPI;

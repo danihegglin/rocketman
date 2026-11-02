@@ -4,6 +4,21 @@ A fast, minimal HTTP client — think Postman without the weight — built in Ru
 
 Collections are plain **OpenAPI 3.x** files, so they live happily in git next to your code and work with every other OpenAPI tool.
 
+## Install
+
+Every [release](https://github.com/danihegglin/rocketman/releases/latest) has packages for each OS. All of them contain both the desktop app (`rocketman`) and the terminal UI (`rocketman-tui`).
+
+| OS | Package | Install |
+| --- | --- | --- |
+| macOS 11+ (Apple silicon and Intel) | `rocketman-<tag>-macos-universal.dmg` | Open it and drag rocketman to Applications. The app isn't notarized, so the first time right-click it and choose Open (or run `xattr -dr com.apple.quarantine /Applications/rocketman.app`). The terminal UI is at `/Applications/rocketman.app/Contents/MacOS/rocketman-tui`, or in `rocketman-<tag>-macos-universal.tar.gz`. |
+| Windows 10/11 (x64) | `rocketman-<tag>-windows-x64.msi` | Run the installer. It adds rocketman to the Start menu and its folder to `PATH`. The MSI isn't code-signed, so SmartScreen may ask first. A `.zip` with both `.exe` files is there too. |
+| Debian, Ubuntu | `rocketman_<version>_amd64.deb` | `sudo apt install ./rocketman_<version>_amd64.deb` |
+| RHEL/CentOS 7+, Fedora, openSUSE | `rocketman-<version>-1.x86_64.rpm` | `sudo dnf install ./rocketman-<version>-1.x86_64.rpm` (`yum` on CentOS 7, `zypper` on openSUSE) |
+| Any Linux (x86_64) | `rocketman-<tag>-x86_64.AppImage` | `chmod +x` and run it. Linked as `rocketman-tui` (`ln -s rocketman-<tag>-x86_64.AppImage rocketman-tui`) it starts the terminal UI. |
+| Any Linux (x86_64) | `rocketman-<tag>-x86_64-linux-glibc2.17.tar.gz` | Unpack anywhere and run `./rocketman` or `./rocketman-tui`. |
+
+All Linux packages run on glibc 2.17 and newer (CentOS/RHEL 7 onwards); see [below](#linux-builds-for-older-distros-glibc-217).
+
 ## Run
 
 ```sh
@@ -100,4 +115,6 @@ cargo test
 
 ## Releasing
 
-Bump `version` in `Cargo.toml` (run `cargo check` to update `Cargo.lock`) and merge to `main`. The Release workflow tags the commit as `v<version>` and publishes a GitHub release with generated notes. Versions with a suffix such as `0.2.0-beta.1` are marked as pre-releases. The glibc 2.17 Linux binary is built and attached to each release.
+Bump `version` in `Cargo.toml` (run `cargo check` to update `Cargo.lock`) and merge to `main`. Nothing else is manual: the Release workflow builds all the packages above, then tags the commit as `v<version>` and publishes a GitHub release with the packages attached and generated notes. Versions with a suffix such as `0.2.0-beta.1` are marked as pre-releases. If a package fails to build, no tag or release is created; re-run the workflow once it's fixed.
+
+The packages are built by `.github/workflows/packages.yml`, which also runs on every pull request and installs each package (the `.rpm` on CentOS 7, Rocky Linux 9 and Fedora, the `.deb` on Debian 12 and Ubuntu 24.04, the `.msi` on Windows, the `.dmg` on macOS) to check it works. The scripts it uses can be run by hand: `scripts/package-linux-distro.sh` (after the glibc 2.17 build and tarball), `scripts/package-macos.sh` and `scripts/package-windows.ps1`.
