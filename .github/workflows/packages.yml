@@ -1,0 +1,194 @@
+# Builds the installable packages for every OS and checks that they install and run:
+#   Linux:   glibc 2.17 tarball, .deb, .rpm and AppImage (x86_64)
+#   macOS:   universal (Apple silicon + Intel) .dmg and tarball
+#   Windows: x64 .msi installer and .zip
+#
+# Runs on pull requests to catch packaging breakage, and is called by the Release
+# workflow (with the release tag) to build the packages it publishes. Each job
+# uploads its packages as a `packages-<os>` artifact.
+name: Packages
+
+on:
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag used in package file names
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  TAG: ${{ inputs.tag || 'ci' }}
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libxkbcommon-x11-dev libxcb1-dev libfontconfig-dev libfreetype-dev patchelf rpm
+          pip install ziglang==0.13.0
+          cargo install cargo-zigbuild --locked
+          curl -fsSL -o "$RUNNER_TEMP/appimagetool" https://github.com/AppImage/appimagetool/releases/download/1.9.0/appimagetool-x86_64.AppImage
+          chmod +x "$RUNNER_TEMP/appimagetool"
+
+      - name: Build and check glibc symbol versions
+        run: scripts/build-linux-glibc217.sh
+
+      - name: Package
+        env:
+          APPIMAGETOOL: ${{ runner.temp }}/appimagetool
+        run: |
+          tarball=$(scripts/package-linux-glibc217.sh "$TAG" dist)
+          scripts/package-linux-distro.sh "$tarball" "$TAG" dist
+          ls -l dist
+
+      # Without libxkbcommon or libxkbcommon-x11 installed: the tarball bundles them.
+      - name: Load the tarball on CentOS 7 (glibc 2.17) and Rocky Linux 9 (RHEL 9)
+        run: |
+          mkdir out && tar -xzf dist/*.tar.gz -C out
+          for image in centos:7 rockylinux/rockylinux:9; do
+            echo "::group::$image"
+            docker run --rm -v "$PWD/out:/bin-out:ro" "$image" bash -ec '
+              if [ -f /etc/yum.repos.d/CentOS-Base.repo ]; then
+                sed -i -e "s/^mirrorlist/#mirrorlist/" -e "s|^#baseurl=http://mirror.centos.org|baseurl=https://vault.centos.org|" /etc/yum.repos.d/*.repo
+              fi
+              yum install -y -q libxcb
+              if rpm -q libxkbcommon-x11; then exit 1; fi
+              ldd --version | head -1
+              ldd -r /bin-out/rocketman /bin-out/rocketman-tui 2>&1 | tee /tmp/ldd.txt
+              ! grep -E "not found|version .* not found|undefined symbol" /tmp/ldd.txt'
+            echo "::endgroup::"
+          done
+
+      # The package manager has to pull in every runtime dependency by itself.
+      - name: Install the .rpm on CentOS 7, Rocky Linux 9 and Fedora
+        run: |
+          for image in centos:7 rockylinux/rockylinux:9 fedora:latest; do
+            echo "::group::$image"
+            docker run --rm -v "$PWD/dist:/dist:ro" "$image" bash -ec '
+              if [ -f /etc/yum.repos.d/CentOS-Base.repo ]; then
+                sed -i -e "s/^mirrorlist/#mirrorlist/" -e "s|^#baseurl=http://mirror.centos.org|baseurl=https://vault.centos.org|" /etc/yum.repos.d/*.repo
+              fi
+              yum install -y -q /dist/*.rpm
+              ldd -r /opt/rocketman/rocketman 2>&1 | tee /tmp/ldd.txt
+              if grep -E "not found|undefined symbol" /tmp/ldd.txt; then exit 1; fi
+              rocketman-tui --help
+              yum remove -y -q rocketman
+              test ! -e /usr/bin/rocketman'
+            echo "::endgroup::"
+          done
+
+      - name: Install the .deb on Debian 12 and Ubuntu 24.04
+        run: |
+          for image in debian:12 ubuntu:24.04; do
+            echo "::group::$image"
+            docker run --rm -v "$PWD/dist:/dist:ro" "$image" bash -ec '
+              apt-get update -qq
+              apt-get install -y -qq /dist/*.deb
+              ldd -r /opt/rocketman/rocketman 2>&1 | tee /tmp/ldd.txt
+              if grep -E "not found|undefined symbol" /tmp/ldd.txt; then exit 1; fi
+              rocketman-tui --help
+              apt-get remove -y -qq rocketman
+              test ! -e /usr/bin/rocketman'
+            echo "::endgroup::"
+          done
+
+      - name: Run the AppImage on CentOS 7
+        run: |
+          docker run --rm -v "$PWD/dist:/dist:ro" centos:7 bash -ec '
+            cp /dist/*.AppImage /tmp/rocketman.AppImage
+            ln -s /tmp/rocketman.AppImage /tmp/rocketman-tui
+            APPIMAGE_EXTRACT_AND_RUN=1 /tmp/rocketman-tui --help'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages-linux
+          path: |
+            dist/*.tar.gz
+            dist/*.deb
+            dist/*.rpm
+            dist/*.AppImage
+          if-no-files-found: error
+
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Package
+        run: scripts/package-macos.sh "$TAG" dist
+
+      - name: Check the packages
+        run: |
+          mkdir out && tar -xzf dist/*.tar.gz -C out
+          lipo out/rocketman -verify_arch arm64 x86_64
+          lipo out/rocketman-tui -verify_arch arm64 x86_64
+          out/rocketman-tui --help
+          hdiutil attach -nobrowse -mountpoint /tmp/rocketman-dmg dist/*.dmg
+          codesign --verify --strict /tmp/rocketman-dmg/rocketman.app
+          /tmp/rocketman-dmg/rocketman.app/Contents/MacOS/rocketman-tui --help
+          hdiutil detach /tmp/rocketman-dmg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages-macos
+          path: |
+            dist/*.dmg
+            dist/*.tar.gz
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install WiX Toolset
+        run: dotnet tool install --global wix --version 5.0.2
+
+      - name: Package
+        shell: pwsh
+        run: scripts/package-windows.ps1 -Tag $env:TAG -OutDir dist
+
+      - name: Install the .msi and run it
+        shell: pwsh
+        run: |
+          $msi = (Get-ChildItem dist\*.msi).FullName
+          $p = Start-Process msiexec.exe -Wait -PassThru -ArgumentList '/i', "`"$msi`"", '/qn', '/l*v', 'install.log'
+          if ($p.ExitCode -ne 0) { Get-Content install.log -Tail 50; exit $p.ExitCode }
+          & "$env:ProgramFiles\rocketman\rocketman-tui.exe" --help
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path "$env:ProgramFiles\rocketman\rocketman.exe")) { throw 'rocketman.exe not installed' }
+          $path = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+          if ($path -notlike "*$env:ProgramFiles\rocketman*") { throw 'install folder not on PATH' }
+          $p = Start-Process msiexec.exe -Wait -PassThru -ArgumentList '/x', "`"$msi`"", '/qn'
+          if ($p.ExitCode -ne 0) { exit $p.ExitCode }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages-windows
+          path: |
+            dist/*.msi
+            dist/*.zip
+          if-no-files-found: error

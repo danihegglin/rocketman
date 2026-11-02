@@ -1,8 +1,12 @@
 # Tags and releases a new version whenever the version in Cargo.toml changes on main.
 #
 # To cut a release: bump `version` in Cargo.toml (and Cargo.lock) and merge to main.
-# If tag v<version> does not exist yet, this creates it along with a GitHub release
-# whose notes are generated from the merged PRs since the previous tag.
+# If tag v<version> does not exist yet, this builds the packages for every OS
+# (see packages.yml), then creates the tag along with a GitHub release that has
+# all of them attached and notes generated from the merged PRs since the
+# previous tag. The tag and release are only created once every package has
+# built, so a failed build leaves no half-filled release behind; re-run the
+# workflow (or run it by hand) to retry.
 name: Release
 
 on:
@@ -19,10 +23,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  tag:
+  version:
     runs-on: ubuntu-latest
     outputs:
-      created: ${{ steps.check.outputs.created }}
+      new: ${{ steps.check.outputs.new }}
       tag: ${{ steps.version.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
@@ -39,48 +43,44 @@ jobs:
           fi
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
 
-      - name: Create tag and release if new
+      - name: Check whether the tag is new
         id: check
         env:
-          GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
         run: |
           if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
             echo "Tag $TAG already exists, nothing to do."
-            echo "created=false" >> "$GITHUB_OUTPUT"
-            exit 0
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "new=true" >> "$GITHUB_OUTPUT"
           fi
-          prerelease=""
-          case "$TAG" in *-*) prerelease="--prerelease" ;; esac
-          gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" --generate-notes $prerelease
-          echo "created=true" >> "$GITHUB_OUTPUT"
 
-  # Attaches the glibc 2.17 Linux binaries (desktop and terminal) to the new release. This runs here rather
-  # than in a separate `on: release` workflow because releases created with
-  # GITHUB_TOKEN don't trigger other workflows.
-  linux-glibc217:
-    needs: tag
-    if: needs.tag.outputs.created == 'true'
-    runs-on: ubuntu-24.04
+  # Built here rather than in a separate `on: release` workflow because releases
+  # created with GITHUB_TOKEN don't trigger other workflows.
+  packages:
+    needs: version
+    if: needs.version.outputs.new == 'true'
+    uses: ./.github/workflows/packages.yml
+    with:
+      tag: ${{ needs.version.outputs.tag }}
+
+  release:
+    needs: [version, packages]
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: packages-*
+          path: dist
+          merge-multiple: true
 
-      - uses: dtolnay/rust-toolchain@stable
-
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libxkbcommon-dev libxkbcommon-x11-dev libxcb1-dev libfontconfig-dev libfreetype-dev patchelf
-          pip install ziglang==0.13.0
-          cargo install cargo-zigbuild --locked
-
-      - name: Build
-        run: scripts/build-linux-glibc217.sh
-
-      - name: Upload to release
+      - name: Create tag and release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.tag.outputs.tag }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.version.outputs.tag }}
         run: |
-          asset=$(scripts/package-linux-glibc217.sh "$TAG" dist)
-          gh release upload "$TAG" "$asset"
+          ls -l dist
+          prerelease=""
+          case "$TAG" in *-*) prerelease="--prerelease" ;; esac
+          gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" --generate-notes $prerelease dist/*
