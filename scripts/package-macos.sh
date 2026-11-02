@@ -40,8 +40,9 @@ done
 
 # rocketman.app, with the terminal app inside too so it can be linked onto PATH.
 app=$work/dmg/rocketman.app
-mkdir -p "$app/Contents/MacOS"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$work/bin/rocketman" "$work/bin/rocketman-tui" "$app/Contents/MacOS/"
+cp assets/icon/rocketman.icns "$app/Contents/Resources/"
 sed -e "s/@VERSION@/$VERSION/g" -e "s/@MIN_MACOS@/$MACOSX_DEPLOYMENT_TARGET/g" \
   packaging/macos/Info.plist > "$app/Contents/Info.plist"
 plutil -lint "$app/Contents/Info.plist" >&2

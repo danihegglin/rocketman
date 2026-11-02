@@ -1,6 +1,6 @@
 [package]
 name = "rocketman"
-version = "0.2.4"
+version = "0.2.5"
 edition = "2024"
 description = "A fast, minimal HTTP client with OpenAPI collections"
 license = "MIT"
@@ -23,7 +23,7 @@ required-features = ["tui"]
 
 [features]
 default = ["desktop", "tui"]
-desktop = ["dep:gpui-kit", "dep:futures"]
+desktop = ["dep:gpui-kit", "dep:futures", "dep:image"]
 tui = ["dep:ratatui"]
 
 [dependencies]
@@ -37,8 +37,14 @@ indexmap = { version = "2", features = ["serde"] }
 dirs = "7"
 anyhow = "1"
 futures = { version = "0.3", optional = true }
+# Decodes the window icon. Same version GPUI uses, so nothing extra is built.
+image = { version = "0.25", default-features = false, features = ["png"], optional = true }
 log = "0.4"
 env_logger = "0.11"
+
+# Embeds the icon in the Windows .exe files (see build.rs).
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
 
 [profile.release]
 opt-level = 3

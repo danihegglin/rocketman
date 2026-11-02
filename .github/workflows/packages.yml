@@ -85,6 +85,7 @@ jobs:
               ldd -r /opt/rocketman/rocketman 2>&1 | tee /tmp/ldd.txt
               if grep -E "not found|undefined symbol" /tmp/ldd.txt; then exit 1; fi
               rocketman-tui --help
+              test -f /usr/share/icons/hicolor/256x256/apps/rocketman.png
               yum remove -y -q rocketman
               test ! -e /usr/bin/rocketman'
             echo "::endgroup::"
@@ -100,6 +101,7 @@ jobs:
               ldd -r /opt/rocketman/rocketman 2>&1 | tee /tmp/ldd.txt
               if grep -E "not found|undefined symbol" /tmp/ldd.txt; then exit 1; fi
               rocketman-tui --help
+              test -f /usr/share/icons/hicolor/256x256/apps/rocketman.png
               apt-get remove -y -qq rocketman
               test ! -e /usr/bin/rocketman'
             echo "::endgroup::"
@@ -144,6 +146,8 @@ jobs:
           out/rocketman-tui --help
           hdiutil attach -nobrowse -mountpoint /tmp/rocketman-dmg dist/*.dmg
           codesign --verify --strict /tmp/rocketman-dmg/rocketman.app
+          test "$(plutil -extract CFBundleIconFile raw /tmp/rocketman-dmg/rocketman.app/Contents/Info.plist)" = rocketman
+          test -s /tmp/rocketman-dmg/rocketman.app/Contents/Resources/rocketman.icns
           /tmp/rocketman-dmg/rocketman.app/Contents/MacOS/rocketman-tui --help
           hdiutil detach /tmp/rocketman-dmg
 

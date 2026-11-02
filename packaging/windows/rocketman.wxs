@@ -15,6 +15,9 @@
     <MajorUpgrade DowngradeErrorMessage="A newer version of rocketman is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
+    <!-- Shown in Settings > Apps, and on the Start menu shortcut. -->
+    <Icon Id="rocketman.ico" SourceFile="$(var.SourceDir)\assets\icon\rocketman.ico" />
+    <Property Id="ARPPRODUCTICON" Value="rocketman.ico" />
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/danihegglin/rocketman" />
     <Property Id="ARPNOMODIFY" Value="1" />
 
@@ -27,6 +30,7 @@
                       Name="rocketman"
                       Description="A fast, minimal HTTP client with OpenAPI collections"
                       WorkingDirectory="INSTALLFOLDER"
+                      Icon="rocketman.ico"
                       Advertise="yes" />
           </File>
         </Component>

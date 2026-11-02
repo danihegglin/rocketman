@@ -1,0 +1,42 @@
+<!--
+  rocketman app icon (master). Every other icon file is generated from this one
+  by scripts/generate-icons.py; edit this file, then rerun the script.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#312e81"/>
+      <stop offset="1" stop-color="#0f172a"/>
+    </linearGradient>
+    <linearGradient id="flame" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fde047"/>
+      <stop offset="1" stop-color="#f97316"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="230" fill="url(#sky)"/>
+  <!-- stars -->
+  <g fill="#ffffff">
+    <circle cx="240" cy="230" r="10" opacity=".7"/>
+    <circle cx="780" cy="820" r="8" opacity=".5"/>
+    <circle cx="830" cy="300" r="6" opacity=".6"/>
+    <circle cx="180" cy="560" r="6" opacity=".5"/>
+    <circle cx="560" cy="150" r="5" opacity=".6"/>
+  </g>
+  <!-- speed lines -->
+  <g stroke="#38bdf8" stroke-width="34" stroke-linecap="round" opacity=".9">
+    <path d="M250 650 L160 740"/>
+    <path d="M330 740 L220 850"/>
+    <path d="M190 580 L140 630"/>
+  </g>
+  <!-- rocket, drawn pointing up and turned to fly up and to the right -->
+  <g transform="translate(470 555) rotate(45) scale(.86) translate(-512 -560)">
+    <path d="M448 706C450 800 480 860 512 920C544 860 574 800 576 706Z" fill="url(#flame)"/>
+    <path d="M474 706C476 770 492 812 512 852C532 812 548 770 550 706Z" fill="#fef9c3"/>
+    <path d="M410 540L318 650C306 664 302 680 302 700L302 772L412 700Z" fill="#fb7185"/>
+    <path d="M614 540L706 650C718 664 722 680 722 700L722 772L612 700Z" fill="#fb7185"/>
+    <rect x="436" y="672" width="152" height="40" rx="14" fill="#94a3b8"/>
+    <path d="M512 150C604 222 628 352 618 520L612 690L412 690L406 520C396 352 420 222 512 150Z" fill="#f8fafc"/>
+    <circle cx="512" cy="420" r="70" fill="#1e293b"/>
+    <circle cx="512" cy="420" r="46" fill="#38bdf8"/>
+  </g>
+</svg>

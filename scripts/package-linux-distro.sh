@@ -7,7 +7,7 @@
 # xkbcommon libraries in lib/, found through the RPATH), so they run on the
 # same systems the tarball does. The deb and rpm install it to /opt/rocketman
 # with `rocketman` and `rocketman-tui` symlinked into /usr/bin, plus a desktop
-# entry and an icon.
+# entry and the app icon (PNGs in every hicolor size plus the SVG).
 #
 # Needs dpkg-deb and rpmbuild (apt-get install rpm), and desktop-file-validate
 # (desktop-file-utils) for the AppImage. Run after
@@ -38,11 +38,16 @@ trap 'rm -rf "$work"' EXIT
 stage=$work/root
 mkdir -p "$stage/opt/rocketman" "$stage/usr/bin" "$stage/usr/share/applications" \
   "$stage/usr/share/icons/hicolor/scalable/apps" "$stage/usr/share/doc/rocketman"
+ICON_SIZES=(16 24 32 48 64 128 256 512)
 tar -xzf "$TARBALL" -C "$stage/opt/rocketman"
 ln -s ../../opt/rocketman/rocketman "$stage/usr/bin/rocketman"
 ln -s ../../opt/rocketman/rocketman-tui "$stage/usr/bin/rocketman-tui"
 install -m 644 packaging/linux/rocketman.desktop "$stage/usr/share/applications/"
-install -m 644 packaging/linux/rocketman.svg "$stage/usr/share/icons/hicolor/scalable/apps/"
+install -m 644 assets/icon/rocketman.svg "$stage/usr/share/icons/hicolor/scalable/apps/"
+for size in "${ICON_SIZES[@]}"; do
+  install -D -m 644 "assets/icon/png/${size}x${size}.png" \
+    "$stage/usr/share/icons/hicolor/${size}x${size}/apps/rocketman.png"
+done
 install -m 644 README.md LICENSE "$stage/usr/share/doc/rocketman/"
 chmod -R u=rwX,go=rX "$stage"
 
@@ -100,7 +105,7 @@ cp -a $stage/. %{buildroot}/
 /usr/bin/rocketman
 /usr/bin/rocketman-tui
 /usr/share/applications/rocketman.desktop
-/usr/share/icons/hicolor/scalable/apps/rocketman.svg
+/usr/share/icons/hicolor/*/apps/rocketman.*
 %doc /usr/share/doc/rocketman
 SPEC
 # The binaries are already stripped, and the bundled libraries must stay
@@ -124,8 +129,8 @@ if [ -n "${APPIMAGETOOL:-}" ]; then
   mkdir -p "$app/usr/bin"
   cp -a "$stage/opt/rocketman/." "$app/usr/bin/"
   cp -a "$stage/usr/share" "$app/usr/"
-  cp packaging/linux/rocketman.desktop packaging/linux/rocketman.svg "$app/"
-  ln -s rocketman.svg "$app/.DirIcon"
+  cp packaging/linux/rocketman.desktop assets/icon/rocketman.png "$app/"
+  ln -s rocketman.png "$app/.DirIcon"
   # Runs the desktop app, or the terminal app when started through a link
   # named rocketman-tui (ln -s rocketman-*.AppImage rocketman-tui).
   cat > "$app/AppRun" <<'APPRUN'
