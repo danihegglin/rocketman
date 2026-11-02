@@ -9,7 +9,8 @@
 # with `rocketman` and `rocketman-tui` symlinked into /usr/bin, plus a desktop
 # entry and an icon.
 #
-# Needs dpkg-deb and rpmbuild (apt-get install rpm). Run after
+# Needs dpkg-deb and rpmbuild (apt-get install rpm), and desktop-file-validate
+# (desktop-file-utils) for the AppImage. Run after
 # scripts/package-linux-glibc217.sh.
 # Usage: scripts/package-linux-distro.sh <tarball> <tag> <out-dir>
 # Prints the paths of the packages it wrote.
