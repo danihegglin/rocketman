@@ -21,7 +21,7 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 actions!(
     rocketman,
@@ -1126,7 +1126,12 @@ impl RocketApp {
                     .child(if loading {
                         Button::new("cancel-send")
                             .w(px(90.))
-                            .label("Cancel")
+                            .child(
+                                h_flex()
+                                    .gap_1p5()
+                                    .child(Spinner::new().xsmall())
+                                    .child("Cancel"),
+                            )
                             .tooltip("Cancel (Esc)")
                             .on_click(cx.listener(|this, _, window, cx| this.cancel(&Cancel, window, cx)))
                     } else {
@@ -1253,13 +1258,35 @@ impl RocketApp {
                 )
                 .into_any_element(),
             ResponseState::Loading { started, .. } => {
-                let elapsed = started.elapsed();
+                let elapsed = format_duration(started.elapsed());
                 v_flex()
                     .size_full()
-                    .child(header.child(Spinner::new().small()).child(format!(
-                        "Sending… {}",
-                        format_duration(elapsed)
-                    )))
+                    .child(
+                        header
+                            .child(Spinner::new().small().color(theme.primary))
+                            .child(format!("Sending… {elapsed}")),
+                    )
+                    .child(progress_bar(theme.primary))
+                    .child(
+                        v_flex()
+                            .flex_1()
+                            .items_center()
+                            .justify_center()
+                            .gap_3()
+                            .child(Spinner::new().with_size(px(32.)).color(theme.muted_foreground))
+                            .child(
+                                div()
+                                    .text_2xl()
+                                    .font_family(theme.mono_font_family.clone())
+                                    .child(elapsed),
+                            )
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(theme.muted_foreground)
+                                    .child("Waiting for response  ·  Esc to cancel"),
+                            ),
+                    )
                     .into_any_element()
             }
             ResponseState::Failed(msg) => v_flex()
@@ -1405,6 +1432,28 @@ impl RocketApp {
             }
         }
     }
+}
+
+/// A thin indeterminate bar that sweeps across under the response header while
+/// a request is in flight, so the panel visibly moves even when the body is empty.
+fn progress_bar(color: Hsla) -> impl IntoElement {
+    const WIDTH: f32 = 0.3;
+    div().h(px(2.)).w_full().relative().overflow_hidden().child(
+        div()
+            .absolute()
+            .top_0()
+            .h_full()
+            .w(relative(WIDTH))
+            .bg(color)
+            .with_animation(
+                "request-progress",
+                Animation::new(Duration::from_millis(1200))
+                    .repeat()
+                    .with_easing(ease_in_out),
+                // Slide from fully off the left edge to fully off the right edge.
+                |bar, t| bar.left(relative(-WIDTH + t * (1.0 + WIDTH))),
+            ),
+    )
 }
 
 impl Focusable for RocketApp {
